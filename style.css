@@ -584,8 +584,22 @@ details > summary::-webkit-details-marker { display: none; }
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
-.scanner-controls .btn { flex: 1; justify-content: center; }
+.scanner-controls .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .scanner-controls #btn-start {
+    flex: 1 1 100%; /* Tombol Aktifkan Kamera jadi penuh di mobile */
+  }
+  .scanner-controls #btn-stop,
+  .scanner-controls #btn-reset {
+    flex: 1 1 calc(50% - 4px); /* Tombol kontrol lainnya berbagi ruang 50/50 */
+  }
+}
 
 /* Manual input fallback */
 .manual-wrap {
@@ -1166,6 +1180,11 @@ details > summary::-webkit-details-marker { display: none; }
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
+@media (max-width: 360px) {
+  .qr-grid {
+    grid-template-columns: 1fr; /* 1 kolom untuk layar sangat kecil agar tidak sempit */
+  }
+}
 
 .qr-item {
   display: flex;
@@ -1191,9 +1210,12 @@ details > summary::-webkit-details-marker { display: none; }
   display: inline-flex;
   border: 1px solid #e2e8f0;
   overflow: hidden;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .qr-img-wrap img {
-  width: 140px;       /* tampil lebih besar di preview */
+  width: 100%;       /* gambar responsif mengikuti lebar card */
+  max-width: 140px;  /* batas maksimal ukuran */
   height: auto;       /* jaga rasio portrait */
   display: block;
 }
