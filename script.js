@@ -29,7 +29,7 @@
 ════════════════════════════════════════════════════════ */
 const CONFIG = {
   /** URL Google Apps Script Web App — ganti dengan milik Anda */
-  WEB_APP_URL: 'PASTE_GOOGLE_APPS_SCRIPT_URL_HERE',
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbxPG4vgTo5868eR5mPS5S_S10vkY3h8xWzhErz-y-TshGz0y4Ur6SkM9pgE9GvrDRDW/exec',
 
   /** localStorage keys */
   LS_DB:         'absn_v2_database',
