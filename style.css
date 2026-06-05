@@ -1133,7 +1133,24 @@ details > summary::-webkit-details-marker { display: none; }
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
-.qrgen-action-row .btn { flex: 1; justify-content: center; min-width: 100px; }
+.qrgen-action-row .btn {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-width: 0;        /* izinkan shrink tanpa batas */
+  white-space: nowrap; /* jangan pecah kata di dalam tombol */
+}
+
+/* Di mobile: tombol Generate jadi penuh satu baris,
+   Download ZIP & Cetak A4 berbagi baris kedua */
+@media (max-width: 480px) {
+  .qrgen-action-row #btn-gen-all {
+    flex: 1 1 100%;
+  }
+  .qrgen-action-row #btn-dl-zip,
+  .qrgen-action-row #btn-print-qr {
+    flex: 1 1 calc(50% - 4px);
+  }
+}
 
 /* Generate progress */
 .gen-progress-wrap {
