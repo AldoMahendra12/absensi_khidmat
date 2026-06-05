@@ -253,8 +253,9 @@ function handleExcelFile(file) {
 
 /**
  * Parse satu sheet Excel menjadi array data wali santri.
- * Menggunakan index kolom (posisi), bukan nama header,
- * agar fleksibel dengan berbagai format header.
+ * Setiap baris santri menghasilkan 1 atau 2 record wali:
+ *   - Jika ada Nama Bapak → record dengan ID: PREFIX001B, jenisWali: 'Bapak'
+ *   - Jika ada Nama Ibu   → record dengan ID: PREFIX001I, jenisWali: 'Ibu'
  *
  * Struktur kolom yang diharapkan:
  *   Kolom 0 (A): No (dilewati)
@@ -287,11 +288,45 @@ function parseExcelSheet(worksheet, kategori) {
     const namaSantri = String(row[1] || '').trim();
     if (!namaSantri || namaSantri === '' || namaSantri === '-') continue;
 
-    const namaBapak = String(row[2] || '-').trim() || '-';
-    const namaIbu   = String(row[3] || '-').trim() || '-';
-    const id        = `${prefix}${String(counter).padStart(3, '0')}`;
+    const namaBapak = String(row[2] || '').trim();
+    const namaIbu   = String(row[3] || '').trim();
+    const noSantri  = String(counter).padStart(3, '0');
 
-    results.push({ id, kategori, namaSantri, namaBapak, namaIbu });
+    /* Setiap wali yang tercantum mendapatkan QR Code sendiri */
+    const hasBapak = namaBapak && namaBapak !== '-' && namaBapak !== '';
+    const hasIbu   = namaIbu   && namaIbu   !== '-' && namaIbu   !== '';
+
+    if (hasBapak) {
+      results.push({
+        id:        `${prefix}${noSantri}B`,
+        kategori,
+        namaSantri,
+        namaWali:  namaBapak,
+        jenisWali: 'Bapak',
+      });
+    }
+
+    if (hasIbu) {
+      results.push({
+        id:        `${prefix}${noSantri}I`,
+        kategori,
+        namaSantri,
+        namaWali:  namaIbu,
+        jenisWali: 'Ibu',
+      });
+    }
+
+    /* Jika keduanya kosong, tetap catat dengan placeholder */
+    if (!hasBapak && !hasIbu) {
+      results.push({
+        id:        `${prefix}${noSantri}B`,
+        kategori,
+        namaSantri,
+        namaWali:  '-',
+        jenisWali: 'Bapak',
+      });
+    }
+
     counter++;
   }
 
@@ -445,7 +480,7 @@ function setScannerUIActive(active) {
 
 /**
  * Proses ID yang di-scan atau di-input manual.
- * @param {string} id - ID wali santri (e.g. "PUTRA001")
+ * @param {string} id - ID wali (e.g. "PUTRA001B" atau "PUTRA001I")
  */
 function processID(id) {
   /* Normalisasi ID */
@@ -463,7 +498,7 @@ function processID(id) {
   if (STATE.attendanceMap[idClean]) {
     const existing = STATE.attendanceMap[idClean];
     showResultDuplicate(person, existing);
-    showToast(`⚠ QR sudah digunakan! ${person.namaSantri} (hadir pukul ${existing.waktuHadir})`, 'warning');
+    showToast(`⚠ QR sudah digunakan! ${person.namaWali} (hadir pukul ${existing.waktuHadir})`, 'warning');
     playWarningBeep();
     vibrateDevice();
     return;
@@ -498,7 +533,7 @@ function processID(id) {
   vibrateDevice();
 
   /* Toast */
-  showToast(`✓ Absensi berhasil — ${person.namaSantri}`, 'success');
+  showToast(`✓ Absensi berhasil — ${person.namaWali} (${person.jenisWali} dari ${person.namaSantri})`, 'success');
 
   /* Kirim ke Google Sheets (async) */
   sendToSheets(record);
@@ -597,11 +632,15 @@ function showResultSuccess(record) {
   el('result-strip-time').setAttribute('datetime', now.toISOString());
 
   /* Fields */
-  el('res-id').textContent      = record.id;
-  el('res-santri').textContent  = record.namaSantri;
-  el('res-bapak').textContent   = record.namaBapak;
-  el('res-ibu').textContent     = record.namaIbu;
-  el('res-waktu').textContent   = record.waktuHadir;
+  el('res-id').textContent       = record.id;
+  el('res-santri').textContent   = record.namaSantri;
+  el('res-wali').textContent     = record.namaWali;
+  el('res-jenis').textContent    = record.jenisWali;
+  el('res-waktu').textContent    = record.waktuHadir;
+
+  /* Jenis Wali badge (Bapak = biru, Ibu = pink) */
+  const jenisBadge = el('res-jenis');
+  jenisBadge.className = 'rf-badge' + (record.jenisWali === 'Ibu' ? ' putri' : '');
 
   /* Kategori badge */
   const katBadge = el('res-kategori');
@@ -637,9 +676,12 @@ function showResultDuplicate(person, existing) {
 
   el('res-id').textContent      = person.id;
   el('res-santri').textContent  = person.namaSantri;
-  el('res-bapak').textContent   = person.namaBapak;
-  el('res-ibu').textContent     = person.namaIbu;
+  el('res-wali').textContent    = person.namaWali;
+  el('res-jenis').textContent   = person.jenisWali;
   el('res-waktu').textContent   = existing.waktuHadir;
+
+  const jenisBadge = el('res-jenis');
+  jenisBadge.className = 'rf-badge' + (person.jenisWali === 'Ibu' ? ' putri' : '');
 
   const katBadge = el('res-kategori');
   katBadge.textContent = person.kategori;
@@ -670,9 +712,12 @@ function showResultError(msg) {
 
   el('res-id').textContent      = '—';
   el('res-santri').textContent  = '—';
-  el('res-bapak').textContent   = '—';
-  el('res-ibu').textContent     = '—';
+  el('res-wali').textContent    = '—';
+  el('res-jenis').textContent   = '—';
   el('res-waktu').textContent   = '—';
+
+  const jenisBadge = el('res-jenis');
+  jenisBadge.className = 'rf-badge';
 
   const katBadge  = el('res-kategori');
   katBadge.textContent = '—';
@@ -717,8 +762,8 @@ async function sendToSheets(record) {
     id:          record.id,
     kategori:    record.kategori,
     namaSantri:  record.namaSantri,
-    namaBapak:   record.namaBapak,
-    namaIbu:     record.namaIbu,
+    namaWali:    record.namaWali,
+    jenisWali:   record.jenisWali,
     waktuHadir:  record.waktuHadir,
     tanggal:     record.tanggal,
     status:      'Hadir',
@@ -769,10 +814,10 @@ function addLogEntry(record) {
   li.setAttribute('role', 'listitem');
   li.innerHTML = `
     <span class="log-item-no">${count}</span>
-    <span class="log-item-dot ${record.kategori.toLowerCase()}" aria-hidden="true"></span>
+    <span class="log-item-dot ${record.jenisWali === 'Ibu' ? 'putri' : 'putra'}" aria-hidden="true"></span>
     <div class="log-item-info">
-      <div class="log-item-name">${escHtml(record.namaSantri)}</div>
-      <div class="log-item-id">${escHtml(record.id)} &bull; ${escHtml(record.kategori)}</div>
+      <div class="log-item-name">${escHtml(record.namaWali)} <span style="font-size:0.7em;opacity:0.6">(${escHtml(record.jenisWali)})</span></div>
+      <div class="log-item-id">${escHtml(record.id)} &bull; ${escHtml(record.namaSantri)}</div>
     </div>
     <span class="log-item-time">${escHtml(record.waktuHadir)}</span>
   `;
@@ -810,10 +855,10 @@ function renderLogList() {
     li.setAttribute('role', 'listitem');
     li.innerHTML = `
       <span class="log-item-no">${idx + 1}</span>
-      <span class="log-item-dot ${record.kategori.toLowerCase()}" aria-hidden="true"></span>
+      <span class="log-item-dot ${record.jenisWali === 'Ibu' ? 'putri' : 'putra'}" aria-hidden="true"></span>
       <div class="log-item-info">
-        <div class="log-item-name">${escHtml(record.namaSantri)}</div>
-        <div class="log-item-id">${escHtml(record.id)} &bull; ${escHtml(record.kategori)}</div>
+        <div class="log-item-name">${escHtml(record.namaWali)} <span style="font-size:0.7em;opacity:0.6">(${escHtml(record.jenisWali)})</span></div>
+        <div class="log-item-id">${escHtml(record.id)} &bull; ${escHtml(record.namaSantri)}</div>
       </div>
       <span class="log-item-time">${escHtml(record.waktuHadir)}</span>
     `;
@@ -874,7 +919,7 @@ function getFilteredData() {
     /* Filter pencarian teks */
     if (search) {
       const haystack = [
-        person.id, person.namaSantri, person.namaBapak, person.namaIbu, person.kategori,
+        person.id, person.namaSantri, person.namaWali, person.jenisWali, person.kategori,
       ].join(' ').toLowerCase();
       if (!haystack.includes(search)) return false;
     }
@@ -921,8 +966,12 @@ function renderAdminTable() {
       <td>${idx + 1}</td>
       <td class="mono-small">${escHtml(person.id)}</td>
       <td>${escHtml(person.namaSantri)}</td>
-      <td>${escHtml(person.namaBapak)}</td>
-      <td>${escHtml(person.namaIbu)}</td>
+      <td>${escHtml(person.namaWali)}</td>
+      <td>
+        <span class="badge-kat badge-kat--${person.jenisWali === 'Ibu' ? 'putri' : 'putra'}">
+          ${escHtml(person.jenisWali)}
+        </span>
+      </td>
       <td>
         <span class="badge-kat badge-kat--${person.kategori.toLowerCase()}">
           ${escHtml(person.kategori)}
@@ -965,8 +1014,8 @@ function exportExcel() {
       'No':          idx + 1,
       'ID':          person.id,
       'Nama Santri': person.namaSantri,
-      'Nama Bapak':  person.namaBapak,
-      'Nama Ibu':    person.namaIbu,
+      'Nama Wali':   person.namaWali,
+      'Jenis Wali':  person.jenisWali,
       'Kategori':    person.kategori,
       'Waktu Hadir': att ? att.waktuHadir : '-',
       'Tanggal':     att ? att.tanggal    : '-',
@@ -978,8 +1027,8 @@ function exportExcel() {
 
   /* Set column widths */
   ws['!cols'] = [
-    { wch: 4 }, { wch: 10 }, { wch: 28 }, { wch: 28 },
-    { wch: 28 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 14 },
+    { wch: 4 }, { wch: 12 }, { wch: 28 }, { wch: 28 },
+    { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 14 },
   ];
 
   const wb = XLSX.utils.book_new();
@@ -1004,15 +1053,15 @@ function exportCSV() {
     return;
   }
 
-  const headers = ['No','ID','Nama Santri','Nama Bapak','Nama Ibu','Kategori','Waktu Hadir','Tanggal','Status'];
+  const headers = ['No','ID','Nama Santri','Nama Wali','Jenis Wali','Kategori','Waktu Hadir','Tanggal','Status'];
   const rows    = filtered.map((person, idx) => {
     const att = STATE.attendanceMap[person.id];
     return [
       idx + 1,
       person.id,
       person.namaSantri,
-      person.namaBapak,
-      person.namaIbu,
+      person.namaWali,
+      person.jenisWali,
       person.kategori,
       att ? att.waktuHadir : '-',
       att ? att.tanggal    : '-',
@@ -1056,8 +1105,14 @@ function printLaporan() {
         <td>${idx + 1}</td>
         <td style="font-family:monospace;font-size:8pt">${escHtml(person.id)}</td>
         <td>${escHtml(person.namaSantri)}</td>
-        <td>${escHtml(person.namaBapak)}</td>
-        <td>${escHtml(person.namaIbu)}</td>
+        <td>${escHtml(person.namaWali)}</td>
+        <td style="text-align:center">
+          <span style="font-size:7pt;font-weight:bold;padding:1pt 5pt;border-radius:3pt;
+            background:${person.jenisWali==='Ibu'?'#fce7f3':'#dbeafe'};
+            color:${person.jenisWali==='Ibu'?'#9d174d':'#1d4ed8'}">
+            ${escHtml(person.jenisWali)}
+          </span>
+        </td>
         <td style="text-align:center">
           <span style="font-size:7pt;font-weight:bold;padding:1pt 5pt;border-radius:3pt;
             background:${person.kategori==='Putra'?'#dbeafe':'#fce7f3'};
@@ -1104,7 +1159,7 @@ function printLaporan() {
     </div>
     <table>
       <thead><tr>
-        <th>No</th><th>ID</th><th>Nama Santri</th><th>Nama Bapak</th><th>Nama Ibu</th>
+        <th>No</th><th>ID</th><th>Nama Santri</th><th>Nama Wali</th><th>Jenis Wali</th>
         <th>Kategori</th><th>Waktu Hadir</th><th>Status</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -1250,8 +1305,8 @@ function generateQRDataURL(person) {
     ctx.lineWidth   = 1.5;
     ctx.strokeRect(0.75, 0.75, W - 1.5, H - 1.5);
 
-    /* ── 5. Top accent bar (biru = Putra, pink = Putri) ── */
-    const accent   = person.kategori === 'Putra' ? '#3b82f6' : '#ec4899';
+    /* Accent bar warna berdasarkan JENIS WALI (Bapak=biru, Ibu=pink) */
+    const accent   = person.jenisWali === 'Ibu' ? '#ec4899' : '#3b82f6';
     ctx.fillStyle  = accent;
     ctx.fillRect(0, 0, W, TOP_BAR);
 
@@ -1300,14 +1355,18 @@ function generateQRDataURL(person) {
     if (namaDisplay !== person.namaSantri) namaDisplay += '...';
     ctx.fillText(namaDisplay, W / 2, baseY + 46, maxW);
 
-    /* Nama Bapak (abu-abu, lebih kecil) */
+    /* Nama Wali (abu-abu, lebih kecil) */
     ctx.fillStyle = '#64748b';
     ctx.font      = '16px Arial, sans-serif';
-    let bapakDisplay = 'Bapak: ' + person.namaBapak;
-    ctx.fillText(bapakDisplay, W / 2, baseY + 76, maxW);
+    let waliDisplay = person.jenisWali + ': ' + person.namaWali;
+    while (ctx.measureText(waliDisplay).width > maxW && waliDisplay.length > 8) {
+      waliDisplay = waliDisplay.slice(0, -1);
+    }
+    if (waliDisplay !== (person.jenisWali + ': ' + person.namaWali)) waliDisplay += '...';
+    ctx.fillText(waliDisplay, W / 2, baseY + 76, maxW);
 
-    /* Badge kategori (pill berwarna) */
-    const bdgText  = person.kategori;
+    /* Badge Jenis Wali (pill berwarna) */
+    const bdgText  = person.jenisWali + ' • ' + person.kategori;
     const bdgW     = 80;
     const bdgH     = 30;
     const bdgX     = W / 2 - bdgW / 2;
@@ -1382,6 +1441,8 @@ function buildQRCard(person, dataURL, index) {
     <div class="qr-info">
       <span class="qr-id">${escHtml(person.id)}</span>
       <span class="qr-nama">${escHtml(person.namaSantri)}</span>
+      <span class="qr-wali">${escHtml(person.namaWali)}</span>
+      <span class="qr-badge qr-badge--${person.jenisWali === 'Ibu' ? 'putri' : 'putra'}">${escHtml(person.jenisWali)}</span>
       <span class="qr-badge qr-badge--${person.kategori.toLowerCase()}">${escHtml(person.kategori)}</span>
     </div>
     <button class="btn btn-sm btn-ghost qr-dl-btn"
@@ -1464,8 +1525,8 @@ function printAllQR() {
       <img src="${dataURL}" alt="QR ${escHtml(person.id)}" width="148" height="148">
       <div class="qr-id">${escHtml(person.id)}</div>
       <div class="qr-nama">${escHtml(person.namaSantri)}</div>
-      <div class="qr-bapak">Bapak: ${escHtml(person.namaBapak)}</div>
-      <div class="qr-badge qr-badge--${person.kategori.toLowerCase()}">${escHtml(person.kategori)}</div>
+      <div class="qr-wali">${escHtml(person.jenisWali)}: ${escHtml(person.namaWali)}</div>
+      <div class="qr-badge qr-badge--${person.jenisWali === 'Ibu' ? 'putri' : 'putra'}">${escHtml(person.jenisWali)} &bull; ${escHtml(person.kategori)}</div>
     </div>
   `).join('');
 
