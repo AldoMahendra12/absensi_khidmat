@@ -1286,10 +1286,10 @@ function generateQRDataURL(person) {
     /* ── 2. Ukuran canvas ── */
     const QR_SIZE  = 420;  /* lebar & tinggi area QR dalam px */
     const PAD      = 36;   /* padding kiri-kanan-atas */
-    const TEXT_H   = 160;  /* tinggi area teks di bawah QR */
+    const TEXT_H   = 190;  /* tinggi area teks di bawah QR (ditambah agar tidak overlap) */
     const TOP_BAR  = 10;   /* garis warna di atas */
     const W        = QR_SIZE + PAD * 2;   /* = 492 */
-    const H        = TOP_BAR + QR_SIZE + PAD + TEXT_H; /* = 626 */
+    const H        = TOP_BAR + QR_SIZE + PAD + TEXT_H; /* = 656 */
 
     const canvas   = document.createElement('canvas');
     canvas.width   = W;
@@ -1347,7 +1347,6 @@ function generateQRDataURL(person) {
     /* Nama Santri (bold hitam, besar) */
     ctx.fillStyle = '#0f172a';
     ctx.font      = 'bold 22px Arial, sans-serif';
-    /* Potong nama panjang agar tidak melebihi canvas */
     let namaDisplay = person.namaSantri;
     while (ctx.measureText(namaDisplay).width > maxW && namaDisplay.length > 4) {
       namaDisplay = namaDisplay.slice(0, -1);
@@ -1363,14 +1362,14 @@ function generateQRDataURL(person) {
       waliDisplay = waliDisplay.slice(0, -1);
     }
     if (waliDisplay !== (person.jenisWali + ': ' + person.namaWali)) waliDisplay += '...';
-    ctx.fillText(waliDisplay, W / 2, baseY + 76, maxW);
+    ctx.fillText(waliDisplay, W / 2, baseY + 78, maxW);
 
     /* Badge Jenis Wali (pill berwarna) */
     const bdgText  = person.jenisWali + ' • ' + person.kategori;
-    const bdgW     = 80;
+    const bdgW     = 120;
     const bdgH     = 30;
     const bdgX     = W / 2 - bdgW / 2;
-    const bdgY     = baseY + 92;
+    const bdgY     = baseY + 104;
     ctx.fillStyle  = accent;
     ctxRoundRect(ctx, bdgX, bdgY, bdgW, bdgH, 15);
     ctx.fill();
@@ -1381,7 +1380,7 @@ function generateQRDataURL(person) {
     /* Footer kecil */
     ctx.fillStyle  = '#cbd5e1';
     ctx.font       = '12px Arial, sans-serif';
-    ctx.fillText('Absensi Wali Santri', W / 2, H - 10);
+    ctx.fillText('Absensi Wali Santri', W / 2, H - 15);
 
     return canvas.toDataURL('image/png');
 
@@ -1441,20 +1440,33 @@ function buildQRCard(person, dataURL, index) {
     <div class="qr-info">
       <span class="qr-id">${escHtml(person.id)}</span>
       <span class="qr-nama">${escHtml(person.namaSantri)}</span>
-      <span class="qr-wali">${escHtml(person.namaWali)}</span>
-      <span class="qr-badge qr-badge--${person.jenisWali === 'Ibu' ? 'putri' : 'putra'}">${escHtml(person.jenisWali)}</span>
-      <span class="qr-badge qr-badge--${person.kategori.toLowerCase()}">${escHtml(person.kategori)}</span>
+      <span class="qr-wali">${escHtml(person.jenisWali)}: ${escHtml(person.namaWali)}</span>
+      <div class="qr-badges">
+        <span class="qr-badge qr-badge--${person.jenisWali === 'Ibu' ? 'putri' : 'putra'}">${escHtml(person.jenisWali)}</span>
+        <span class="qr-badge qr-badge--${person.kategori.toLowerCase()}">${escHtml(person.kategori)}</span>
+      </div>
     </div>
-    <button class="btn btn-sm btn-ghost qr-dl-btn"
-      onclick="downloadSingleQR(${index})"
-      aria-label="Download QR Code untuk ${escHtml(person.id)}">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/>
-        <line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-      Download
-    </button>
+    <div class="qr-actions-grid">
+      <button class="btn btn-sm btn-ghost qr-dl-btn"
+        onclick="downloadSingleQR(${index})"
+        aria-label="Download QR Code untuk ${escHtml(person.id)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Simpan
+      </button>
+      <button class="btn btn-sm btn-primary qr-wa-btn"
+        onclick="shareSingleQR(${index})"
+        style="background: #25D366; border-color: #25D366;"
+        aria-label="Kirim QR Code via WhatsApp">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+        </svg>
+        Share
+      </button>
+    </div>
   `;
   return div;
 }
@@ -1473,6 +1485,43 @@ function downloadSingleQR(index) {
   link.href      = dataURL;
   link.download  = filename;
   link.click();
+}
+
+/**
+ * Share QR Code langsung sebagai gambar menggunakan Web Share API.
+ * Berguna di HP agar bisa langsung kirim ke WhatsApp tanpa download.
+ * @param {number} index
+ */
+async function shareSingleQR(index) {
+  const item = STATE.generatedQRs[index];
+  if (!item) return;
+
+  const { person, dataURL } = item;
+  const filename = `QR-${person.id}-${person.namaSantri.replace(/\s+/g, '-')}.png`;
+
+  /* Konversi base64 ke blob/file */
+  const res  = await fetch(dataURL);
+  const blob = await res.blob();
+  const file = new File([blob], filename, { type: 'image/png' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        title: 'QR Code Absensi',
+        text: `QR Code Absensi Wali Santri\nSantri: ${person.namaSantri}\nWali: ${person.namaWali} (${person.jenisWali})\nID: ${person.id}`,
+        files: [file],
+      });
+      showToast('Berhasil membagikan QR', 'success');
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        showToast('Gagal membagikan: ' + err.message, 'error');
+      }
+    }
+  } else {
+    /* Fallback ke download jika browser tidak support File sharing */
+    showToast('Browser Anda tidak mendukung share langsung. File didownload otomatis.', 'warning');
+    downloadSingleQR(index);
+  }
 }
 
 /** Download semua QR Code dalam satu file ZIP */
