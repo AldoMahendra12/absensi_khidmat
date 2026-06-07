@@ -1685,7 +1685,136 @@ function dismissToast(toastEl) {
 }
 
 /* ════════════════════════════════════════════════════════
-   17. CONNECTION STATUS
+   17. SYNC FROM SHEETS
+   Sinkronisasi 2 arah: baca data kehadiran dari Google Sheets
+   setiap 1 detik agar semua perangkat menampilkan data yang sama.
+════════════════════════════════════════════════════════ */
+
+let _syncBusy     = false;  /* cegah request tumpuk */
+let _syncTimer    = null;
+let _syncEnabled  = false;
+
+/**
+ * Mulai sinkronisasi otomatis.
+ * Request berikutnya baru dikirim SETELAH request sebelumnya selesai,
+ * sehingga koneksi lambat tidak membuat request menumpuk.
+ */
+function startSync() {
+  if (CONFIG.WEB_APP_URL === 'PASTE_GOOGLE_APPS_SCRIPT_URL_HERE') return;
+  _syncEnabled = true;
+
+  /* Tampilkan sync bar */
+  const bar = el('sync-bar');
+  if (bar) bar.hidden = false;
+
+  /* Sinkron langsung saat pertama kali */
+  syncFromSheets();
+
+  /* Jadwal ulang setiap kali selesai (1 detik setelah selesai) */
+  function scheduleNext() {
+    if (!_syncEnabled) return;
+    _syncTimer = setTimeout(async () => {
+      await syncFromSheets();
+      scheduleNext();
+    }, 1000);
+  }
+  scheduleNext();
+}
+
+/** Hentikan sinkronisasi */
+function stopSync() {
+  _syncEnabled = false;
+  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+}
+
+/**
+ * Satu siklus sinkronisasi:
+ * GET data dari Sheets → merge ke STATE.attendanceMap → update UI.
+ */
+async function syncFromSheets() {
+  if (_syncBusy) return;
+  if (STATE.database.length === 0) return; /* tunggu database dimuat dulu */
+  if (!navigator.onLine) {
+    setSyncUI('error', 'Offline — tidak dapat sinkron');
+    return;
+  }
+
+  _syncBusy = true;
+  setSyncUI('syncing', 'Menyinkronkan...');
+
+  try {
+    const resp = await fetch(CONFIG.WEB_APP_URL, {
+      method: 'GET',
+      cache:  'no-store',
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const json = await resp.json();
+    if (json.status !== 'ok' || !Array.isArray(json.data)) {
+      throw new Error('Format respons tidak valid');
+    }
+
+    let newCount = 0;
+
+    for (const row of json.data) {
+      const id = String(row.id || '').trim().toUpperCase();
+      if (!id) continue;
+
+      /* Sudah ada di lokal → skip */
+      if (STATE.attendanceMap[id]) continue;
+
+      /* Cari di database lokal */
+      const person = STATE.database.find(p => p.id === id);
+      if (!person) continue;
+
+      /* Catat sebagai hadir (dari Sheets) */
+      STATE.attendanceMap[id] = {
+        ...person,
+        waktuHadir:  String(row.waktuHadir || '—'),
+        tanggal:     String(row.tanggal    || '—'),
+        timestampMs: Date.now(),
+        fromSync:    true,
+      };
+      newCount++;
+    }
+
+    if (newCount > 0) {
+      saveToStorage();
+      updateStats();
+      renderLogList();
+      if (STATE.activePage === 'admin') renderAdminTable();
+      showToast(`↓ ${newCount} data baru dari perangkat lain`, 'info');
+    }
+
+    const now = new Date().toLocaleTimeString('id-ID', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    setSyncUI('ok', `Sinkron ${now}`);
+
+  } catch (err) {
+    console.warn('[Sync]', err.message);
+    setSyncUI('error', 'Gagal sinkron — coba lagi...');
+  } finally {
+    _syncBusy = false;
+  }
+}
+
+/**
+ * Update tampilan sync bar.
+ * @param {'syncing'|'ok'|'error'} status
+ * @param {string} text
+ */
+function setSyncUI(status, text) {
+  const dot = el('sync-dot');
+  const txt = el('sync-text');
+  if (!dot || !txt) return;
+  dot.className = 'sync-dot ' + status;
+  txt.textContent = text;
+}
+
+/* ════════════════════════════════════════════════════════
+   18. CONNECTION STATUS
 ════════════════════════════════════════════════════════ */
 
 function updateConnectionStatus() {
@@ -1817,6 +1946,9 @@ document.addEventListener('DOMContentLoaded', function() {
   renderLogList();
   renderAdminTable();
   syncQRGenPage();
+
+  /* ── Mulai sinkronisasi otomatis dari Google Sheets ── */
+  startSync();
 
   /* ── Pastikan hanya scanner page yang tampil pertama ── */
   document.querySelectorAll('.page').forEach(p => {

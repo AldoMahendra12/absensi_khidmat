@@ -199,6 +199,32 @@ details > summary::-webkit-details-marker { display: none; }
 .conn-dot.online  { background: var(--success); box-shadow: 0 0 6px var(--success); animation: pulse-dot 2s infinite; }
 .conn-dot.offline { background: var(--error); }
 
+/* Sync status bar */
+.sync-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px var(--page-pad);
+  background: rgba(59,130,246,0.08);
+  border-top: 1px solid rgba(59,130,246,0.15);
+  font-size: 0.65rem;
+  color: var(--text-sec);
+}
+.sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+  transition: background 0.3s;
+}
+.sync-dot.syncing {
+  background: #f59e0b;
+  animation: pulse-dot 0.8s infinite;
+}
+.sync-dot.ok      { background: var(--success); }
+.sync-dot.error   { background: var(--error); }
+
 /* ─────────────────────────────────────────────
    5. DATABASE STATUS BANNER
 ───────────────────────────────────────────── */
