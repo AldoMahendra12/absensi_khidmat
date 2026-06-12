@@ -73,6 +73,9 @@ const STATE = {
 
   /** Halaman aktif */
   activePage: 'scanner',
+
+  /** ID dari Sheets yang diabaikan setelah clear/upload ulang */
+  ignoredSyncIds: [],
 };
 
 /* ════════════════════════════════════════════════════════
@@ -157,9 +160,10 @@ function loadFromStorage() {
 function clearDatabase() {
   if (!confirm('Hapus semua data database dan absensi? Tindakan ini tidak dapat dibatalkan.')) return;
 
-  STATE.database = [];
+  STATE.database      = [];
   STATE.attendanceMap = {};
-  STATE.generatedQRs = [];
+  STATE.generatedQRs  = [];
+  STATE.clearedAt     = Date.now();
   saveToStorage();
 
   updateDBBanner();
@@ -168,6 +172,13 @@ function clearDatabase() {
   renderAdminTable();
   syncQRGenPage();
   resetQRGrid();
+
+  /* Reset result card ke state kosong */
+  el('result-empty').hidden     = false;
+  el('result-populated').hidden = true;
+
+  /* Ambil snapshot ID yang ada di Sheets agar tidak masuk lagi */
+  snapshotSheetsToIgnore();
 
   showToast('Database berhasil dihapus', 'info');
 }
@@ -223,9 +234,10 @@ function handleExcelFile(file) {
         return;
       }
 
-      /* Simpan ke state */
-      STATE.database = allData;
-      STATE.attendanceMap = {}; /* Reset absensi saat import database baru */
+      /* Simpan ke state — reset absensi dan tandai waktu agar sync tidak re-import */
+      STATE.database      = allData;
+      STATE.attendanceMap = {};
+      STATE.clearedAt     = Date.now();
       saveToStorage();
 
       /* Update semua UI */
@@ -235,6 +247,9 @@ function handleExcelFile(file) {
       renderAdminTable();
       syncQRGenPage();
       resetQRGrid();
+
+      /* Ambil snapshot ID yang ada di Sheets agar tidak masuk sebagai data lama */
+      snapshotSheetsToIgnore();
 
       const putraCount = allData.filter(d => d.kategori === 'Putra').length;
       const putriCount = allData.filter(d => d.kategori === 'Putri').length;
@@ -1782,12 +1797,41 @@ function stopSync() {
 }
 
 /**
+ * Ambil semua ID yang saat ini ada di Google Sheets dan simpan ke
+ * STATE.ignoredSyncIds agar setelah database di-reset, ID-ID tersebut
+ * tidak akan di-sync masuk kembali.
+ */
+async function snapshotSheetsToIgnore() {
+  if (CONFIG.WEB_APP_URL === 'PASTE_GOOGLE_APPS_SCRIPT_URL_HERE') return;
+  try {
+    const resp = await fetch(CONFIG.WEB_APP_URL, {
+      method: 'GET', cache: 'no-store', redirect: 'follow',
+    });
+    if (!resp.ok) return;
+    const json = await resp.json();
+    if (json.status !== 'ok' || !Array.isArray(json.data)) return;
+    STATE.ignoredSyncIds = json.data
+      .map(r => String(r.id || '').trim().toUpperCase())
+      .filter(Boolean);
+    console.log('[Sync] Snapshot abaikan', STATE.ignoredSyncIds.length, 'ID lama dari Sheets');
+  } catch (e) {
+    console.warn('[Sync] Gagal ambil snapshot:', e.message);
+  }
+}
+
+/**
  * Satu siklus sinkronisasi:
  * GET data dari Sheets → merge ke STATE.attendanceMap → update UI.
  */
 async function syncFromSheets() {
   if (_syncBusy) return;
-  if (STATE.database.length === 0) return; /* tunggu database dimuat dulu */
+
+  /* Jika database belum dimuat, tampilkan status yang sesuai dan keluar */
+  if (STATE.database.length === 0) {
+    setSyncUI('error', 'Database belum dimuat');
+    return;
+  }
+
   if (!navigator.onLine) {
     setSyncUI('error', 'Offline — tidak dapat sinkron');
     return;
@@ -1830,6 +1874,10 @@ async function syncFromSheets() {
       /* Cari di database lokal */
       const person = STATE.database.find(p => p.id === id);
       if (!person) continue;
+
+      /* Jika ID ini ada dalam daftar "abaikan" (data dari sesi lama
+         sebelum database di-reset/upload ulang) → skip */
+      if (STATE.ignoredSyncIds && STATE.ignoredSyncIds.includes(id)) continue;
 
       /* Catat sebagai hadir (dari Sheets) */
       STATE.attendanceMap[id] = {
