@@ -770,21 +770,26 @@ async function sendToSheets(record) {
   };
 
   try {
-    /* mode: 'no-cors' diperlukan karena Google Apps Script tidak support CORS
-       Konsekuensinya: kita tidak bisa membaca response body.
-       Anggap sukses jika fetch tidak throw error. */
+    /*
+     * PENTING: mode 'no-cors' hanya mengizinkan "simple" Content-Type.
+     * Content-Type: application/json DIBLOKIR browser dalam no-cors mode.
+     * Solusi: kirim body sebagai string tanpa set Content-Type eksplisit
+     * → browser otomatis pakai text/plain (yang diizinkan).
+     * Google Apps Script tetap bisa baca isi body via e.postData.contents.
+     */
     await fetch(CONFIG.WEB_APP_URL, {
-      method:  'POST',
-      mode:    'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
+      method:   'POST',
+      mode:     'no-cors',
+      redirect: 'follow',
+      body:     JSON.stringify(payload),
     });
 
+    console.log('[Sheets] Terkirim:', record.id);
     el('sheets-sending').hidden = true;
     el('sheets-ok').hidden      = false;
 
   } catch (err) {
-    console.error('[Sheets]', err);
+    console.error('[Sheets] Gagal:', err.message, payload);
     el('sheets-sending').hidden = true;
     el('sheets-err').hidden     = false;
     el('sheets-err-msg').textContent = 'Gagal kirim ke Sheets: ' + (err.message || 'Network error');
@@ -1793,13 +1798,22 @@ async function syncFromSheets() {
 
   try {
     const resp = await fetch(CONFIG.WEB_APP_URL, {
-      method: 'GET',
-      cache:  'no-store',
+      method:   'GET',
+      cache:    'no-store',
+      redirect: 'follow',
     });
 
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
 
-    const json = await resp.json();
+    const text = await resp.text();
+    console.log('[Sync] Raw response (pertama 200 karakter):', text.slice(0, 200));
+
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (parseErr) {
+      throw new Error('Response bukan JSON valid: ' + text.slice(0, 100));
+    }
     if (json.status !== 'ok' || !Array.isArray(json.data)) {
       throw new Error('Format respons tidak valid');
     }
